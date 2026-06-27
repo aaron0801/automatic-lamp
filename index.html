@@ -1,0 +1,970 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>一機開戰｜One Phone Party</title>
+  <style>
+    :root {
+      --bg: #7410b8;
+      --ink: #251035;
+      --white: #ffffff;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #230537;
+      touch-action: none;
+      overscroll-behavior: none;
+      font-family: "Arial Rounded MT Bold", "Trebuchet MS", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;
+      background: #7410b8;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  const COLORS = {
+    purple: '#7610C4',
+    purpleDark: '#3B0B5E',
+    purpleDeep: '#220535',
+    cyan: '#35C9F4',
+    blue: '#4B7BED',
+    green: '#36D909',
+    yellow: '#FFD318',
+    red: '#FF3A35',
+    pink: '#F83372',
+    orange: '#FF961A',
+    white: '#FFFFFF',
+    ink: '#24122E',
+    black: '#09060D'
+  };
+
+  const PLAYER_COLORS = ['#FF3131', '#4580FF', '#35D40C', '#FFD21A'];
+  const PLAYER_NAMES = ['P1', 'P2', 'P3', 'P4'];
+  const POINTS_BY_RANK = [5, 3, 2, 1];
+
+  const GAMES = [
+    { id: 'push', title: '推人出圈', sub: '撞飛朋友', color: COLORS.red, classRef: null },
+    { id: 'coin', title: '搶金幣', sub: '誰最快貪', color: COLORS.yellow, classRef: null },
+    { id: 'tap', title: '反應拍燈', sub: '快按別亂按', color: COLORS.cyan, classRef: null },
+    { id: 'bomb', title: '躲炸彈', sub: '活到最後', color: COLORS.orange, classRef: null },
+    { id: 'pong', title: '太空守門', sub: '擋球不漏', color: COLORS.green, classRef: null }
+  ];
+
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  function rand(min, max) { return Math.random() * (max - min) + min; }
+  function choice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function dist(a, b, c, d) { return Math.hypot(a - c, b - d); }
+  function now() { return performance.now() / 1000; }
+  function easeOutBack(t) {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function drawText(ctx, text, x, y, size, fill = COLORS.white, align = 'center', stroke = COLORS.ink, lineWidth = 7) {
+    ctx.save();
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.font = `900 ${size}px "Arial Rounded MT Bold", "Trebuchet MS", sans-serif`;
+    ctx.lineJoin = 'round';
+    if (stroke && lineWidth > 0) {
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = stroke;
+      ctx.strokeText(text, x, y);
+    }
+    ctx.fillStyle = fill;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  function drawIcon(ctx, type, x, y, s, color = COLORS.white) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (type === 'home') {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(-s * .45, -s * .05);
+      ctx.lineTo(0, -s * .45);
+      ctx.lineTo(s * .45, -s * .05);
+      ctx.lineTo(s * .32, -s * .05);
+      ctx.lineTo(s * .32, s * .42);
+      ctx.lineTo(s * .08, s * .42);
+      ctx.lineTo(s * .08, s * .14);
+      ctx.lineTo(-s * .08, s * .14);
+      ctx.lineTo(-s * .08, s * .42);
+      ctx.lineTo(-s * .32, s * .42);
+      ctx.lineTo(-s * .32, -s * .05);
+      ctx.closePath();
+      ctx.fill();
+    } else if (type === 'gear') {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = s * .13;
+      ctx.beginPath();
+      ctx.arc(0, 0, s * .22, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * s * .34, Math.sin(a) * s * .34);
+        ctx.lineTo(Math.cos(a) * s * .48, Math.sin(a) * s * .48);
+        ctx.stroke();
+      }
+    } else if (type === 'coin') {
+      ctx.fillStyle = COLORS.yellow;
+      ctx.strokeStyle = COLORS.white;
+      ctx.lineWidth = s * .08;
+      ctx.beginPath();
+      ctx.arc(0, 0, s * .42, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      drawText(ctx, '$', 0, s * .02, s * .55, COLORS.orange, 'center', '#A87600', 4);
+    } else if (type === 'bomb') {
+      ctx.fillStyle = COLORS.ink;
+      ctx.beginPath(); ctx.arc(0, s * .05, s * .35, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = COLORS.white; ctx.lineWidth = s * .05; ctx.stroke();
+      ctx.strokeStyle = COLORS.orange; ctx.lineWidth = s * .08;
+      ctx.beginPath(); ctx.moveTo(s * .12, -s * .28); ctx.quadraticCurveTo(s * .28, -s * .48, s * .48, -s * .38); ctx.stroke();
+    } else if (type === 'tap') {
+      ctx.fillStyle = COLORS.white;
+      ctx.beginPath();
+      ctx.arc(0, 0, s * .35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = COLORS.ink; ctx.lineWidth = s * .07; ctx.stroke();
+      ctx.strokeStyle = color; ctx.lineWidth = s * .12;
+      ctx.beginPath(); ctx.moveTo(-s*.12, s*.02); ctx.lineTo(0, s*.16); ctx.lineTo(s*.22, -s*.16); ctx.stroke();
+    } else if (type === 'ufo') {
+      ctx.fillStyle = color;
+      roundRect(ctx, -s*.45, -s*.05, s*.9, s*.32, s*.16); ctx.fill();
+      ctx.strokeStyle = COLORS.ink; ctx.lineWidth = s*.05; ctx.stroke();
+      ctx.fillStyle = '#8FEFFF';
+      ctx.beginPath(); ctx.arc(0, -s*.08, s*.24, Math.PI, 0); ctx.closePath(); ctx.fill();
+      ctx.stroke();
+      for (let i = -2; i <= 2; i++) {
+        ctx.fillStyle = COLORS.white;
+        ctx.beginPath(); ctx.arc(i*s*.16, s*.11, s*.035, 0, Math.PI*2); ctx.fill();
+      }
+    } else if (type === 'push') {
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(0,0,s*.42,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle = COLORS.white; ctx.lineWidth = s*.09; ctx.stroke();
+      ctx.strokeStyle = COLORS.white; ctx.lineWidth = s*.12;
+      ctx.beginPath(); ctx.moveTo(-s*.2,0); ctx.lineTo(s*.18,0); ctx.moveTo(s*.05,-s*.14); ctx.lineTo(s*.22,0); ctx.lineTo(s*.05,s*.14); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  class Button {
+    constructor(x, y, w, h, label, sub, color, onClick, opts = {}) {
+      this.x = x; this.y = y; this.w = w; this.h = h;
+      this.label = label; this.sub = sub; this.color = color; this.onClick = onClick;
+      this.icon = opts.icon || null;
+      this.small = !!opts.small;
+      this.disabled = !!opts.disabled;
+    }
+    contains(x, y) { return !this.disabled && x >= this.x && x <= this.x + this.w && y >= this.y && y <= this.y + this.h; }
+    draw(ctx, t = 0) {
+      ctx.save();
+      ctx.globalAlpha = this.disabled ? .45 : 1;
+      ctx.shadowColor = 'rgba(0,0,0,.35)';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = Math.max(5, this.h * .08);
+      ctx.fillStyle = COLORS.ink;
+      roundRect(ctx, this.x - 6, this.y + 7, this.w + 12, this.h + 8, 20); ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.fillStyle = this.color;
+      roundRect(ctx, this.x, this.y, this.w, this.h, 18); ctx.fill();
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = COLORS.white;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.22)';
+      roundRect(ctx, this.x + 10, this.y + 10, this.w - 20, this.h * .36, 12); ctx.fill();
+      if (this.icon) drawIcon(ctx, this.icon, this.x + this.h * .48, this.y + this.h * .5, this.h * .55, COLORS.white);
+      const tx = this.icon ? this.x + this.w * .56 : this.x + this.w / 2;
+      const mainSize = this.small ? this.h * .34 : this.h * .38;
+      drawText(ctx, this.label, tx, this.y + this.h * (this.sub ? .42 : .52), mainSize, COLORS.white, 'center', COLORS.ink, 7);
+      if (this.sub) drawText(ctx, this.sub, tx, this.y + this.h * .73, this.h * .18, COLORS.white, 'center', COLORS.ink, 4);
+      ctx.restore();
+    }
+  }
+
+  class App {
+    constructor() {
+      this.w = window.innerWidth;
+      this.h = window.innerHeight;
+      this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      this.state = 'home';
+      this.buttons = [];
+      this.playerCount = 2;
+      this.currentGame = null;
+      this.gameId = null;
+      this.lastTime = performance.now();
+      this.touchMap = new Map();
+      this.settings = { sound: true, vibrate: true };
+      this.party = { active: false, round: 0, total: 5, scores: [0,0,0,0] };
+      this.pendingParty = false;
+      this.results = null;
+      this.audioCtx = null;
+      this.safeTop = 0;
+      this.safeBottom = 0;
+      this.resize();
+      window.addEventListener('resize', () => this.resize(), { passive: true });
+      window.addEventListener('orientationchange', () => setTimeout(() => this.resize(), 250), { passive: true });
+      canvas.addEventListener('pointerdown', e => this.onPointerDown(e));
+      canvas.addEventListener('pointermove', e => this.onPointerMove(e));
+      canvas.addEventListener('pointerup', e => this.onPointerUp(e));
+      canvas.addEventListener('pointercancel', e => this.onPointerUp(e));
+      document.addEventListener('contextmenu', e => e.preventDefault());
+      document.addEventListener('gesturestart', e => e.preventDefault());
+      requestAnimationFrame(ts => this.loop(ts));
+    }
+
+    resize() {
+      this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      this.w = Math.max(1, window.innerWidth);
+      this.h = Math.max(1, window.innerHeight);
+      canvas.width = Math.floor(this.w * this.dpr);
+      canvas.height = Math.floor(this.h * this.dpr);
+      canvas.style.width = `${this.w}px`;
+      canvas.style.height = `${this.h}px`;
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.safeTop = Math.max(8, this.h * .02);
+      this.safeBottom = Math.max(8, this.h * .02);
+      if (this.currentGame && this.currentGame.onResize) this.currentGame.onResize();
+    }
+
+    canvasPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+
+    loop(ts) {
+      const dt = Math.min(0.05, (ts - this.lastTime) / 1000 || 0);
+      this.lastTime = ts;
+      if (this.state === 'countdown') {
+        const remain = this.countdownEnd - now();
+        if (remain <= 0) {
+          this.state = 'game';
+          this.currentGame.start();
+        }
+      } else if (this.state === 'game' && this.currentGame) {
+        this.currentGame.update(dt);
+      }
+      this.draw();
+      requestAnimationFrame(t => this.loop(t));
+    }
+
+    beep(freq = 420, dur = .05, type = 'sine') {
+      if (!this.settings.sound) return;
+      try {
+        if (!this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const t = this.audioCtx.currentTime;
+        const osc = this.audioCtx.createOscillator();
+        const gain = this.audioCtx.createGain();
+        osc.type = type; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(.045, t);
+        gain.gain.exponentialRampToValueAtTime(.001, t + dur);
+        osc.connect(gain); gain.connect(this.audioCtx.destination);
+        osc.start(t); osc.stop(t + dur);
+      } catch (_) {}
+    }
+
+    buzz(ms = 20) {
+      if (this.settings.vibrate && navigator.vibrate) navigator.vibrate(ms);
+    }
+
+    onPointerDown(e) {
+      e.preventDefault();
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      const p = this.canvasPos(e);
+      this.unlockAudio();
+      for (const b of this.buttons) {
+        if (b.contains(p.x, p.y)) {
+          this.beep(520, .045, 'square');
+          this.buzz(12);
+          b.onClick();
+          return;
+        }
+      }
+      if (this.state === 'game' && this.currentGame) this.currentGame.pointerDown(e.pointerId, p.x, p.y);
+      if (this.state === 'countdown' && this.currentGame) this.currentGame.pointerDown(e.pointerId, p.x, p.y);
+    }
+
+    onPointerMove(e) {
+      e.preventDefault();
+      const p = this.canvasPos(e);
+      if ((this.state === 'game' || this.state === 'countdown') && this.currentGame) this.currentGame.pointerMove(e.pointerId, p.x, p.y);
+    }
+
+    onPointerUp(e) {
+      e.preventDefault();
+      const p = this.canvasPos(e);
+      if ((this.state === 'game' || this.state === 'countdown') && this.currentGame) this.currentGame.pointerUp(e.pointerId, p.x, p.y);
+      this.touchMap.delete(e.pointerId);
+    }
+
+    unlockAudio() {
+      if (this.audioCtx && this.audioCtx.state === 'suspended') this.audioCtx.resume().catch(() => {});
+    }
+
+    setState(s) {
+      this.state = s;
+      this.buttons = [];
+      this.currentGame = null;
+      this.results = null;
+    }
+
+    startGame(gameId) {
+      const data = GAMES.find(g => g.id === gameId) || GAMES[0];
+      this.gameId = gameId;
+      this.currentGame = new data.classRef(this, data);
+      this.currentGame.init(this.playerCount);
+      this.state = 'countdown';
+      this.countdownStart = now();
+      this.countdownEnd = now() + 3.1;
+      this.buttons = [];
+    }
+
+    startParty() {
+      this.party = { active: true, round: 0, total: 5, scores: [0,0,0,0] };
+      this.startNextPartyRound();
+    }
+
+    startNextPartyRound() {
+      this.party.round += 1;
+      const g = choice(GAMES).id;
+      this.startGame(g);
+    }
+
+    finishGame(results) {
+      this.beep(720, .08, 'triangle');
+      this.buzz(30);
+      const normalized = results.slice().sort((a, b) => (b.score - a.score) || (a.p - b.p));
+      if (this.party.active) {
+        normalized.forEach((r, i) => { this.party.scores[r.p] += POINTS_BY_RANK[i] || 0; });
+      }
+      this.results = normalized;
+      this.state = 'results';
+      this.currentGame = null;
+      this.buttons = [];
+    }
+
+    getHomeButton() {
+      const size = Math.min(this.w, this.h) * .09;
+      return new Button(this.w / 2 - size / 2, this.h - size - 12, size, size, '', '', 'rgba(255,255,255,.22)', () => {
+        this.party.active = false;
+        this.setState('games');
+      }, { icon: 'home', small: true });
+    }
+
+    playerZones(count = this.playerCount) {
+      const w = this.w, h = this.h;
+      if (count === 2) {
+        return [
+          { x: 0, y: 0, w: w / 2, h, cx: w * .14, cy: h * .82, label: 'P1' },
+          { x: w / 2, y: 0, w: w / 2, h, cx: w * .86, cy: h * .82, label: 'P2' }
+        ];
+      }
+      if (count === 3) {
+        return [
+          { x: 0, y: h * .45, w: w / 2, h: h * .55, cx: w * .14, cy: h * .82, label: 'P1' },
+          { x: w / 2, y: h * .45, w: w / 2, h: h * .55, cx: w * .86, cy: h * .82, label: 'P2' },
+          { x: 0, y: 0, w, h: h * .45, cx: w * .5, cy: h * .16, label: 'P3' }
+        ];
+      }
+      return [
+        { x: 0, y: h / 2, w: w / 2, h: h / 2, cx: w * .14, cy: h * .82, label: 'P1' },
+        { x: w / 2, y: h / 2, w: w / 2, h: h / 2, cx: w * .86, cy: h * .82, label: 'P2' },
+        { x: 0, y: 0, w: w / 2, h: h / 2, cx: w * .14, cy: h * .18, label: 'P3' },
+        { x: w / 2, y: 0, w: w / 2, h: h / 2, cx: w * .86, cy: h * .18, label: 'P4' }
+      ];
+    }
+
+    zoneAt(x, y) {
+      const zones = this.playerZones();
+      for (let i = 0; i < zones.length; i++) {
+        const z = zones[i];
+        if (x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h) return i;
+      }
+      return -1;
+    }
+
+    drawBackground() {
+      const w = this.w, h = this.h;
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, '#8313D0'); grad.addColorStop(.55, '#7610C4'); grad.addColorStop(1, '#5C0E9C');
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+      const tile = Math.max(96, Math.min(w, h) * .18);
+      ctx.save();
+      ctx.globalAlpha = .14;
+      for (let yy = -tile; yy < h + tile; yy += tile) {
+        for (let xx = -tile; xx < w + tile; xx += tile) {
+          const idx = Math.abs(Math.floor(xx / tile) + Math.floor(yy / tile)) % 4;
+          ctx.fillStyle = 'rgba(255,255,255,.12)';
+          roundRect(ctx, xx + tile * .1, yy + tile * .12, tile * .72, tile * .58, tile * .12); ctx.fill();
+          const cx = xx + tile * .46, cy = yy + tile * .41;
+          ctx.strokeStyle = '#170026'; ctx.lineWidth = 5;
+          ctx.fillStyle = [COLORS.red, COLORS.green, COLORS.cyan, COLORS.yellow][idx];
+          if (idx === 0) {
+            ctx.beginPath(); ctx.arc(cx, cy, tile * .12, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx - tile*.06, cy - tile*.02, tile*.018, 0, Math.PI*2); ctx.arc(cx + tile*.06, cy - tile*.02, tile*.018, 0, Math.PI*2); ctx.fillStyle = COLORS.white; ctx.fill();
+          } else if (idx === 1) {
+            roundRect(ctx, cx - tile*.12, cy - tile*.1, tile*.24, tile*.2, tile*.04); ctx.fill(); ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx - tile*.05, cy, tile*.018, 0, Math.PI*2); ctx.arc(cx + tile*.05, cy, tile*.018, 0, Math.PI*2); ctx.fillStyle = COLORS.white; ctx.fill();
+          } else if (idx === 2) {
+            ctx.beginPath(); ctx.arc(cx, cy, tile*.12, Math.PI, 0); ctx.lineTo(cx+tile*.12, cy+tile*.08); ctx.lineTo(cx-tile*.12, cy+tile*.08); ctx.closePath(); ctx.fill(); ctx.stroke();
+          } else {
+            ctx.beginPath(); ctx.moveTo(cx, cy - tile*.13); ctx.lineTo(cx + tile*.13, cy); ctx.lineTo(cx, cy + tile*.13); ctx.lineTo(cx - tile*.13, cy); ctx.closePath(); ctx.fill(); ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
+
+      this.drawCornerBurst(0, 0, Math.min(w,h)*.22, COLORS.yellow, -1, -1);
+      this.drawCornerBurst(w, 0, Math.min(w,h)*.22, COLORS.blue, 1, -1);
+      this.drawCornerBurst(0, h, Math.min(w,h)*.22, COLORS.red, -1, 1);
+      this.drawCornerBurst(w, h, Math.min(w,h)*.22, COLORS.green, 1, 1);
+    }
+
+    drawCornerBurst(x, y, r, color, sx, sy) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = COLORS.white; ctx.lineWidth = Math.max(5, r * .08); ctx.stroke();
+      ctx.globalAlpha = .22;
+      ctx.strokeStyle = COLORS.white; ctx.lineWidth = Math.max(3, r * .025);
+      for (let i = 0; i < 18; i++) {
+        const a = i * Math.PI * 2 / 18;
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    drawTopCurrency() {
+      const w = this.w;
+      const y = this.safeTop + 8;
+      const bw = Math.max(140, Math.min(220, w * .14));
+      const bh = Math.max(34, Math.min(48, this.h * .06));
+      const items = [
+        { text: `${this.playerCount}P`, icon: 'tap', x: w * .39, c: COLORS.cyan },
+        { text: this.party.active ? `局 ${this.party.round}/${this.party.total}` : 'V1', icon: 'coin', x: w * .61, c: COLORS.yellow }
+      ];
+      for (const it of items) {
+        ctx.fillStyle = 'rgba(20,0,30,.65)';
+        roundRect(ctx, it.x - bw/2, y, bw, bh, bh*.22); ctx.fill();
+        drawText(ctx, it.text, it.x - bw*.12, y + bh*.52, bh*.55, COLORS.white, 'center', COLORS.ink, 5);
+        drawIcon(ctx, it.icon, it.x + bw*.32, y + bh*.52, bh*.85, it.c);
+      }
+    }
+
+    draw() {
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.drawBackground();
+      this.buttons = [];
+      if (this.state === 'home') this.drawHome();
+      else if (this.state === 'players') this.drawPlayers();
+      else if (this.state === 'games') this.drawGames();
+      else if (this.state === 'settings') this.drawSettings();
+      else if (this.state === 'countdown') this.drawCountdown();
+      else if (this.state === 'game' && this.currentGame) this.currentGame.draw();
+      else if (this.state === 'results') this.drawResults();
+      if (this.h > this.w) this.drawRotateHint();
+    }
+
+    drawLogo(y, scale = 1) {
+      const w = this.w;
+      drawText(ctx, '一機', w/2 - 88*scale, y - 24*scale, 76*scale, COLORS.yellow, 'center', COLORS.ink, 10*scale);
+      drawText(ctx, '開戰', w/2 + 88*scale, y - 24*scale, 76*scale, COLORS.green, 'center', COLORS.ink, 10*scale);
+      drawText(ctx, 'ONE PHONE PARTY', w/2, y + 43*scale, 34*scale, COLORS.white, 'center', COLORS.ink, 7*scale);
+    }
+
+    drawHome() {
+      const w = this.w, h = this.h;
+      this.drawTopCurrency();
+      this.drawLogo(h * .24, Math.min(1.05, Math.max(.78, w / 1300)));
+      const bw = Math.min(430, w * .34);
+      const bh = Math.min(92, h * .12);
+      const gap = Math.min(24, h * .035);
+      const x1 = w / 2 - bw - gap;
+      const x2 = w / 2 + gap;
+      const y = h * .50;
+      const b1 = new Button(x1, y, bw, bh, '開始遊戲', '選人數再選小遊戲', COLORS.red, () => { this.pendingParty = false; this.setState('players'); });
+      const b2 = new Button(x2, y, bw, bh, '小遊戲選單', `${this.playerCount}人模式`, COLORS.blue, () => this.setState('games'));
+      const b3 = new Button(w/2 - bw/2, y + bh + gap * 1.1, bw, bh, '隨機派對', '連玩 5 局', COLORS.green, () => { this.pendingParty = true; this.setState('players'); });
+      const b4 = new Button(28, h * .30, Math.min(100, w*.08), Math.min(82, h*.11), '', '', COLORS.cyan, () => this.setState('settings'), { icon: 'gear' });
+      [b1,b2,b3,b4].forEach(b => { b.draw(ctx); this.buttons.push(b); });
+      drawText(ctx, '一支手機，多人亂鬥。先完成這版，再慢慢加新遊戲。', w/2, h - 42, Math.max(18, h*.035), 'rgba(255,255,255,.88)', 'center', COLORS.ink, 4);
+    }
+
+    drawPlayers() {
+      const w = this.w, h = this.h;
+      this.drawTitle('選擇人數', '一台手機 2～4 人圍著玩');
+      const cardW = Math.min(300, w * .22);
+      const cardH = Math.min(250, h * .34);
+      const gap = Math.min(70, w * .04);
+      const total = cardW * 3 + gap * 2;
+      const startX = w / 2 - total / 2;
+      const y = h * .38;
+      [2,3,4].forEach((n, i) => {
+        const b = new Button(startX + i * (cardW + gap), y, cardW, cardH, `${n}P`, `${n} PLAYERS`, [COLORS.blue, COLORS.green, COLORS.yellow][i], () => {
+          this.playerCount = n;
+          if (this.pendingParty) this.startParty();
+          else this.setState('games');
+        });
+        b.draw(ctx); this.buttons.push(b);
+        for (let j=0;j<n;j++) {
+          ctx.fillStyle = 'rgba(0,0,0,.18)';
+          ctx.beginPath(); ctx.arc(b.x + cardW*.28 + j*cardW*.15, b.y + cardH*.76, cardW*.035, 0, Math.PI*2); ctx.fill();
+          roundRect(ctx, b.x + cardW*.245 + j*cardW*.15, b.y + cardH*.79, cardW*.07, cardW*.07, cardW*.02); ctx.fill();
+        }
+      });
+      this.drawBackButton();
+    }
+
+    drawGames() {
+      const w = this.w, h = this.h;
+      this.drawTitle('選小遊戲', `${this.playerCount} 人模式｜目前 5 種`);
+      const cardW = Math.min(250, w * .17);
+      const cardH = Math.min(150, h * .2);
+      const gapX = Math.min(34, w * .025);
+      const gapY = Math.min(28, h * .035);
+      const cols = 3;
+      const totalW = cardW * cols + gapX * (cols - 1);
+      const x0 = w / 2 - totalW / 2;
+      const y0 = h * .28;
+      GAMES.forEach((g, i) => {
+        const row = Math.floor(i / cols), col = i % cols;
+        const x = x0 + col * (cardW + gapX);
+        const y = y0 + row * (cardH + gapY);
+        const b = new Button(x, y, cardW, cardH, g.title, g.sub, g.color, () => {
+          this.party.active = false;
+          this.startGame(g.id);
+        }, { small: true });
+        b.draw(ctx); this.buttons.push(b);
+        const icon = g.id === 'push' ? 'push' : g.id === 'coin' ? 'coin' : g.id === 'tap' ? 'tap' : g.id === 'bomb' ? 'bomb' : 'ufo';
+        drawIcon(ctx, icon, x + cardW*.18, y + cardH*.5, cardH*.46, g.color);
+      });
+      const rb = new Button(w/2 - cardW*.75, y0 + 2*(cardH + gapY), cardW*1.5, cardH*.78, '隨機一局', '不知道玩什麼就按', COLORS.pink, () => {
+        this.party.active = false;
+        this.startGame(choice(GAMES).id);
+      }, { small: true });
+      rb.draw(ctx); this.buttons.push(rb);
+      this.drawBackButton();
+    }
+
+    drawSettings() {
+      const w = this.w, h = this.h;
+      this.drawTitle('設定', '手機派對模式');
+      const bw = Math.min(480, w * .42), bh = Math.min(88, h * .12);
+      const x = w/2 - bw/2;
+      const y = h*.36;
+      const b1 = new Button(x, y, bw, bh, `音效：${this.settings.sound ? '開' : '關'}`, '點一下切換', this.settings.sound ? COLORS.green : COLORS.red, () => { this.settings.sound = !this.settings.sound; });
+      const b2 = new Button(x, y + bh + 24, bw, bh, `震動：${this.settings.vibrate ? '開' : '關'}`, '支援手機才會震', this.settings.vibrate ? COLORS.green : COLORS.red, () => { this.settings.vibrate = !this.settings.vibrate; });
+      const b3 = new Button(x, y + (bh + 24)*2, bw, bh, '清除派對分數', '重新開始比賽', COLORS.orange, () => { this.party.scores = [0,0,0,0]; this.party.active = false; });
+      [b1,b2,b3].forEach(b => { b.draw(ctx); this.buttons.push(b); });
+      this.drawBackButton();
+    }
+
+    drawCountdown() {
+      if (this.currentGame) this.currentGame.draw(true);
+      const remaining = Math.max(0, this.countdownEnd - now());
+      const n = Math.ceil(remaining);
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,.36)';
+      ctx.fillRect(0,0,this.w,this.h);
+      const pulse = easeOutBack(1 - (remaining % 1));
+      const txt = n > 0 ? String(n) : '開始';
+      drawText(ctx, txt, this.w/2, this.h/2, Math.min(this.w, this.h) * (.22 + pulse*.02), n > 0 ? COLORS.yellow : COLORS.green, 'center', COLORS.ink, 16);
+      const g = GAMES.find(x => x.id === this.gameId);
+      drawText(ctx, g ? g.title : '小遊戲', this.w/2, this.h*.24, Math.min(this.w,this.h)*.06, COLORS.white, 'center', COLORS.ink, 7);
+      ctx.restore();
+    }
+
+    drawResults() {
+      const w = this.w, h = this.h;
+      this.drawTitle('本局結果', this.party.active ? `派對第 ${this.party.round}/${this.party.total} 局` : '再來一局或回選單');
+      const panelW = Math.min(620, w*.52);
+      const rowH = Math.min(68, h*.085);
+      const x = w/2 - panelW/2;
+      const y = h*.27;
+      ctx.fillStyle = 'rgba(20,0,30,.55)';
+      roundRect(ctx, x-18, y-18, panelW+36, rowH*(this.playerCount)+36, 24); ctx.fill();
+      for (let i=0;i<this.results.length;i++) {
+        const r = this.results[i];
+        const yy = y + i*rowH;
+        ctx.fillStyle = i === 0 ? COLORS.yellow : 'rgba(255,255,255,.16)';
+        roundRect(ctx, x, yy, panelW, rowH-10, 18); ctx.fill();
+        ctx.strokeStyle = COLORS.white; ctx.lineWidth = 4; ctx.stroke();
+        drawText(ctx, `${i+1}`, x + rowH*.45, yy + rowH*.42, rowH*.45, i===0 ? COLORS.red : COLORS.white, 'center', COLORS.ink, 5);
+        ctx.fillStyle = PLAYER_COLORS[r.p];
+        ctx.beginPath(); ctx.arc(x + rowH*1.1, yy + rowH*.42, rowH*.22, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = COLORS.white; ctx.lineWidth = 4; ctx.stroke();
+        drawText(ctx, `P${r.p+1}`, x + rowH*1.1, yy + rowH*.42, rowH*.26, COLORS.white, 'center', COLORS.ink, 3);
+        drawText(ctx, r.label || `${r.score}分`, x + panelW - 28, yy + rowH*.42, rowH*.32, COLORS.white, 'right', COLORS.ink, 4);
+      }
+      if (this.party.active) {
+        const scoreText = Array.from({length:this.playerCount}, (_,i) => `P${i+1}:${this.party.scores[i]}`).join('  ');
+        drawText(ctx, scoreText, w/2, y + rowH*this.playerCount + 38, Math.min(32,h*.045), COLORS.white, 'center', COLORS.ink, 4);
+      }
+      const bw = Math.min(300, w*.22), bh = Math.min(72, h*.1), gap = 24;
+      const canNextParty = this.party.active && this.party.round < this.party.total;
+      const mainLabel = canNextParty ? '下一局' : (this.party.active ? '派對結算' : '再玩一次');
+      const mainAction = () => {
+        if (canNextParty) this.startNextPartyRound();
+        else if (this.party.active) {
+          this.party.active = false;
+          const final = Array.from({length:this.playerCount}, (_,p)=>({p, score:this.party.scores[p], label:`總分 ${this.party.scores[p]}`})).sort((a,b)=>b.score-a.score);
+          this.results = final;
+          this.state = 'results';
+        } else this.startGame(this.gameId || 'push');
+      };
+      const b1 = new Button(w/2 - bw - gap, h - bh - 24, bw, bh, mainLabel, '', canNextParty ? COLORS.green : COLORS.blue, mainAction, { small: true });
+      const b2 = new Button(w/2 + gap, h - bh - 24, bw, bh, '回選單', '', COLORS.red, () => { this.party.active = false; this.setState('games'); }, { small: true });
+      b1.draw(ctx); b2.draw(ctx); this.buttons.push(b1,b2);
+    }
+
+    drawTitle(title, sub) {
+      drawText(ctx, title, this.w/2, this.h*.13, Math.min(64, this.h*.09), COLORS.white, 'center', COLORS.ink, 9);
+      drawText(ctx, sub, this.w/2, this.h*.205, Math.min(26, this.h*.04), 'rgba(255,255,255,.9)', 'center', COLORS.ink, 4);
+    }
+
+    drawBackButton() {
+      const size = Math.min(76, this.h*.1);
+      const b = new Button(24, 24, size*1.2, size, '←', '', COLORS.cyan, () => this.setState('home'), { small: true });
+      b.draw(ctx); this.buttons.push(b);
+    }
+
+    drawRotateHint() {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,.78)';
+      ctx.fillRect(0,0,this.w,this.h);
+      drawText(ctx, '請將手機橫放', this.w/2, this.h*.45, Math.min(44, this.w*.09), COLORS.white, 'center', COLORS.ink, 7);
+      drawText(ctx, '這款遊戲適合橫式多人圍著玩', this.w/2, this.h*.55, Math.min(22, this.w*.045), COLORS.cyan, 'center', COLORS.ink, 4);
+      ctx.restore();
+    }
+  }
+
+  class MovementGame {
+    constructor(app, data) {
+      this.app = app;
+      this.data = data;
+      this.count = app.playerCount;
+      this.controls = [];
+      this.pointerOwner = new Map();
+      this.duration = 40;
+      this.timeLeft = this.duration;
+      this.started = false;
+      this.homeButton = null;
+    }
+    init(count) {
+      this.count = count;
+      this.controls = Array.from({length:count}, () => ({ active:false, id:null, dx:0, dy:0, tx:0, ty:0 }));
+      this.timeLeft = this.duration;
+    }
+    start() { this.started = true; }
+    onResize() {}
+    zoneAt(x, y) { return this.app.zoneAt(x, y); }
+    pointerDown(id, x, y) {
+      const p = this.zoneAt(x, y);
+      if (p >= 0 && p < this.count) {
+        const c = this.controls[p];
+        if (!c.active) {
+          c.active = true; c.id = id; c.tx = x; c.ty = y;
+          this.pointerOwner.set(id, p);
+          this.updateControl(p, x, y);
+        }
+      }
+    }
+    pointerMove(id, x, y) {
+      const p = this.pointerOwner.get(id);
+      if (p !== undefined) this.updateControl(p, x, y);
+    }
+    pointerUp(id, x, y) {
+      const p = this.pointerOwner.get(id);
+      if (p !== undefined) {
+        this.controls[p] = { active:false, id:null, dx:0, dy:0, tx:x, ty:y };
+        this.pointerOwner.delete(id);
+      }
+    }
+    updateControl(p, x, y) {
+      const z = this.app.playerZones()[p];
+      const max = Math.min(this.app.w, this.app.h) * .12;
+      const dx = x - z.cx, dy = y - z.cy;
+      const d = Math.hypot(dx, dy);
+      const k = d > 0 ? Math.min(1, d / max) / d : 0;
+      this.controls[p].dx = dx * k;
+      this.controls[p].dy = dy * k;
+      this.controls[p].tx = x;
+      this.controls[p].ty = y;
+    }
+    tickTimer(dt) {
+      this.timeLeft -= dt;
+      if (this.timeLeft <= 0) this.endByScore();
+    }
+    endByScore() {}
+    drawHud(title = this.data.title) {
+      const w = this.app.w, h = this.app.h;
+      ctx.fillStyle = 'rgba(20,0,30,.62)';
+      roundRect(ctx, w/2 - 150, 8, 300, 44, 16); ctx.fill();
+      drawText(ctx, `${title}  ${Math.max(0, Math.ceil(this.timeLeft))}`, w/2, 31, 26, COLORS.white, 'center', COLORS.ink, 4);
+      this.homeButton = this.app.getHomeButton();
+      this.homeButton.draw(ctx); this.app.buttons.push(this.homeButton);
+    }
+    drawControls() {
+      const zones = this.app.playerZones();
+      const r = Math.min(this.app.w, this.app.h) * .1;
+      for (let p=0;p<this.count;p++) {
+        const z = zones[p], c = this.controls[p];
+        ctx.save();
+        ctx.globalAlpha = .85;
+        ctx.fillStyle = PLAYER_COLORS[p];
+        ctx.beginPath(); ctx.arc(z.cx, z.cy, r, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = COLORS.white; ctx.lineWidth = Math.max(5, r*.09); ctx.stroke();
+        ctx.globalAlpha = .35;
+        ctx.fillStyle = COLORS.white;
+        ctx.beginPath(); ctx.arc(z.cx, z.cy, r*.56, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+        const tx = z.cx + c.dx * r * .56;
+        const ty = z.cy + c.dy * r * .56;
+        ctx.fillStyle = 'rgba(0,0,0,.22)';
+        ctx.beginPath(); ctx.arc(tx, ty, r*.28, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = COLORS.white;
+        ctx.beginPath(); ctx.arc(tx, ty, r*.2, 0, Math.PI*2); ctx.fill();
+        drawText(ctx, PLAYER_NAMES[p], z.cx, z.cy, r*.34, COLORS.white, 'center', COLORS.ink, 4);
+        ctx.restore();
+      }
+    }
+    drawPlayerAvatar(pl, alpha = 1) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = 'rgba(0,0,0,.22)';
+      ctx.beginPath(); ctx.ellipse(pl.x, pl.y + pl.r*.6, pl.r*.85, pl.r*.35, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = PLAYER_COLORS[pl.p];
+      ctx.beginPath(); ctx.arc(pl.x, pl.y, pl.r, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = COLORS.white; ctx.lineWidth = Math.max(4, pl.r*.16); ctx.stroke();
+      ctx.fillStyle = COLORS.white;
+      ctx.beginPath(); ctx.arc(pl.x - pl.r*.24, pl.y - pl.r*.08, pl.r*.11, 0, Math.PI*2); ctx.arc(pl.x + pl.r*.24, pl.y - pl.r*.08, pl.r*.11, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = COLORS.ink; ctx.lineWidth = Math.max(3, pl.r*.07);
+      ctx.beginPath(); ctx.arc(pl.x, pl.y + pl.r*.05, pl.r*.32, 0.18*Math.PI, 0.82*Math.PI); ctx.stroke();
+      drawText(ctx, PLAYER_NAMES[pl.p], pl.x, pl.y - pl.r*1.25, pl.r*.45, COLORS.white, 'center', COLORS.ink, 4);
+      ctx.restore();
+    }
+  }
+
+  class PushArenaGame extends MovementGame {
+    constructor(app, data) {
+      super(app, data);
+      this.duration = 45;
+      this.outOrder = [];
+      this.players = [];
+    }
+    init(count) {
+      super.init(count);
+      this.timeLeft = this.duration;
+      this.outOrder = [];
+      const w=this.app.w,h=this.app.h;
+      this.cx=w/2; this.cy=h*.48; this.R=Math.min(w,h)*.33;
+      const pr=Math.max(18, Math.min(w,h)*.038);
+      this.players = Array.from({length:count}, (_,p) => {
+        const a = -Math.PI/2 + p*Math.PI*2/count;
+        return { p, x:this.cx+Math.cos(a)*this.R*.38, y:this.cy+Math.sin(a)*this.R*.38, vx:0, vy:0, r:pr, alive:true, score:0 };
+      });
+    }
+    update(dt) {
+      this.tickTimer(dt);
+      const speed = Math.min(this.app.w,this.app.h)*.5;
+      for (const pl of this.players) {
+        if (!pl.alive) continue;
+        const c = this.controls[pl.p];
+        pl.vx = pl.vx*.82 + c.dx*speed*.18;
+        pl.vy = pl.vy*.82 + c.dy*speed*.18;
+        pl.x += pl.vx*dt; pl.y += pl.vy*dt;
+      }
+      for (let i=0;i<this.players.length;i++) for (let j=i+1;j<this.players.length;j++) {
+        const a=this.players[i], b=this.players[j];
+        if (!a.alive || !b.alive) continue;
+        const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1, min=a.r+b.r;
+        if (d<min) {
+          const nx=dx/d, ny=dy/d, push=(min-d)*.55;
+          a.x-=nx*push; a.y-=ny*push; b.x+=nx*push; b.y+=ny*push;
+          a.vx-=nx*80; a.vy-=ny*80; b.vx+=nx*80; b.vy+=ny*80;
+        }
+      }
+      for (const pl of this.players) {
+        if (!pl.alive) continue;
+        const d=dist(pl.x,pl.y,this.cx,this.cy);
+        if (d>this.R+pl.r*.25) {
+          pl.alive=false; this.outOrder.push(pl.p); this.app.beep(160,.07,'sawtooth'); this.app.buzz(35);
+        }
+      }
+      if (this.players.filter(p=>p.alive).length<=1) this.finish();
+    }
+    finish() {
+      const alive = this.players.filter(p=>p.alive).map(p=>p.p);
+      const order = alive.concat(this.outOrder.slice().reverse());
+      this.app.finishGame(order.map((p,i)=>({p, score:this.count-i, label:i===0?'勝利':'淘汰'})));
+    }
+    endByScore() { this.finish(); }
+    draw(preview=false) {
+      const w=this.app.w,h=this.app.h;
+      ctx.save();
+      ctx.fillStyle='rgba(10,0,20,.22)'; ctx.fillRect(0,0,w,h);
+      ctx.fillStyle='rgba(255,255,255,.08)'; ctx.beginPath(); ctx.arc(this.cx,this.cy,this.R,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle=COLORS.white; ctx.lineWidth=10; ctx.stroke();
+      ctx.strokeStyle='rgba(255,255,255,.22)'; ctx.lineWidth=3;
+      for(let r=this.R*.25;r<this.R;r+=this.R*.25){ctx.beginPath();ctx.arc(this.cx,this.cy,r,0,Math.PI*2);ctx.stroke();}
+      for (const pl of this.players) this.drawPlayerAvatar(pl, pl.alive ? 1 : .25);
+      ctx.restore();
+      this.drawHud('推人出圈');
+      this.drawControls();
+    }
+  }
+
+  class CoinDashGame extends MovementGame {
+    constructor(app, data) {
+      super(app, data);
+      this.duration=35; this.players=[]; this.coins=[]; this.spawnT=0;
+    }
+    init(count) {
+      super.init(count); this.timeLeft=this.duration; this.coins=[]; this.spawnT=0;
+      const w=this.app.w,h=this.app.h;
+      this.area={x:w*.18,y:h*.18,w:w*.64,h:h*.62};
+      const pr=Math.max(17,Math.min(w,h)*.035);
+      this.players=Array.from({length:count},(_,p)=>({p,x:this.area.x+this.area.w*(.2+.6*((p%2))),y:this.area.y+this.area.h*(.25+.5*(p>1?1:0)),vx:0,vy:0,r:pr,score:0,alive:true}));
+      for(let i=0;i<5;i++) this.spawnCoin();
+    }
+    spawnCoin() {
+      const r=Math.max(14,Math.min(this.app.w,this.app.h)*.025);
+      this.coins.push({x:rand(this.area.x+r,this.area.x+this.area.w-r),y:rand(this.area.y+r,this.area.y+this.area.h-r),r,type:Math.random()<.18?'bad':'good',life:rand(5,8)});
+    }
+    update(dt) {
+      this.tickTimer(dt);
+      this.spawnT-=dt;
+      if(this.spawnT<=0 && this.coins.length<10){this.spawnCoin();this.spawnT=rand(.45,.8);}
+      const speed=Math.min(this.app.w,this.app.h)*.52;
+      for(const pl of this.players){
+        const c=this.controls[pl.p];
+        pl.vx=pl.vx*.65+c.dx*speed*.35; pl.vy=pl.vy*.65+c.dy*speed*.35;
+        pl.x=clamp(pl.x+pl.vx*dt,this.area.x+pl.r,this.area.x+this.area.w-pl.r);
+        pl.y=clamp(pl.y+pl.vy*dt,this.area.y+pl.r,this.area.y+this.area.h-pl.r);
+      }
+      for(let i=this.coins.length-1;i>=0;i--){
+        const coin=this.coins[i]; coin.life-=dt;
+        if(coin.life<=0){this.coins.splice(i,1);continue;}
+        for(const pl of this.players){
+          if(dist(pl.x,pl.y,coin.x,coin.y)<pl.r+coin.r){
+            pl.score+=coin.type==='good'?1:-1;
+            this.app.beep(coin.type==='good'?780:180,.045,coin.type==='good'?'triangle':'sawtooth');
+            this.coins.splice(i,1); break;
+          }
+        }
+      }
+    }
+    endByScore(){this.app.finishGame(this.players.map(p=>({p:p.p,score:p.score,label:`${p.score} 枚`})));}
+    draw(){
+      ctx.save();
+      ctx.fillStyle='rgba(10,0,20,.26)'; ctx.fillRect(0,0,this.app.w,this.app.h);
+      ctx.fillStyle='rgba(255,255,255,.10)'; roundRect(ctx,this.area.x,this.area.y,this.area.w,this.area.h,30);ctx.fill();
+      ctx.strokeStyle=COLORS.white; ctx.lineWidth=8;ctx.stroke();
+      for(const coin of this.coins){
+        const pulse=.88+.12*Math.sin(now()*8+coin.x);
+        drawIcon(ctx, coin.type==='good'?'coin':'bomb', coin.x, coin.y, coin.r*2.2*pulse, coin.type==='good'?COLORS.yellow:COLORS.red);
+      }
+      for(const pl of this.players){this.drawPlayerAvatar(pl); drawText(ctx,String(pl.score),pl.x,pl.y+pl.r*1.45,pl.r*.55,COLORS.white,'center',COLORS.ink,4);}
+      ctx.restore();
+      this.drawHud('搶金幣'); this.drawControls();
+    }
+  }
+
+  class ReactionTapGame extends MovementGame {
+    constructor(app,data){super(app,data);this.duration=99;this.round=0;this.maxRounds=10;this.scores=[];this.phase='wait';this.phaseUntil=0;this.goAt=0;this.claimed=-1;}
+    init(count){super.init(count);this.scores=Array.from({length:count},()=>0);this.round=0;this.startRound();}
+    startRound(){this.round+=1;this.phase='wait';this.claimed=-1;this.goAt=now()+rand(.9,2.2);this.phaseUntil=this.goAt+1.15;}
+    pointerDown(id,x,y){const p=this.zoneAt(x,y); if(p<0||p>=this.count)return; if(this.phase==='wait'){this.scores[p]-=1;this.app.beep(150,.05,'sawtooth');this.app.buzz(25);} else if(this.phase==='go'&&this.claimed<0){this.claimed=p;this.scores[p]+=2;this.phase='feedback';this.phaseUntil=now()+.9;this.app.beep(900,.06,'square');this.app.buzz(20);} }
+    update(dt){const t=now(); if(this.phase==='wait'&&t>=this.goAt)this.phase='go'; if((this.phase==='go'||this.phase==='feedback')&&t>=this.phaseUntil){ if(this.round>=this.maxRounds)this.endByScore(); else this.startRound(); }}
+    endByScore(){this.app.finishGame(this.scores.map((s,p)=>({p,score:s,label:`${s} 分`})));}
+    draw(){
+      const w=this.app.w,h=this.app.h;
+      ctx.fillStyle='rgba(10,0,20,.25)';ctx.fillRect(0,0,w,h);
+      const zones=this.app.playerZones();
+      for(let p=0;p<this.count;p++){
+        const z=zones[p]; ctx.save(); ctx.globalAlpha=.25; ctx.fillStyle=PLAYER_COLORS[p]; ctx.fillRect(z.x,z.y,z.w,z.h); ctx.restore();
+        drawText(ctx,`P${p+1}`,z.cx,z.cy-42,Math.min(40,h*.055),COLORS.white,'center',COLORS.ink,5);
+        drawText(ctx,`${this.scores[p]}分`,z.cx,z.cy+8,Math.min(34,h*.048),COLORS.white,'center',COLORS.ink,4);
+        drawText(ctx,'拍這區',z.cx,z.cy+48,Math.min(22,h*.032),'rgba(255,255,255,.82)','center',COLORS.ink,3);
+      }
+      ctx.fillStyle=this.phase==='go'?COLORS.green:(this.phase==='feedback'?PLAYER_COLORS[this.claimed]:COLORS.red);
+      ctx.beginPath();ctx.arc(w/2,h/2,Math.min(w,h)*.16,0,Math.PI*2);ctx.fill();ctx.strokeStyle=COLORS.white;ctx.lineWidth=10;ctx.stroke();
+      const txt=this.phase==='go'?'按！':(this.phase==='feedback'?`P${this.claimed+1} 得分`:'等一下');
+      drawText(ctx,txt,w/2,h/2,Math.min(60,h*.09),COLORS.white,'center',COLORS.ink,8);
+      drawText(ctx,`第 ${this.round}/${this.maxRounds} 題`,w/2,h*.28,Math.min(32,h*.05),COLORS.white,'center',COLORS.ink,4);
+      this.drawHud('反應拍燈');
+    }
+  }
+
+  class BombDodgeGame extends MovementGame {
+    constructor(app,data){super(app,data);this.duration=42;this.players=[];this.bombs=[];this.spawnT=0;this.outOrder=[];}
+    init(count){super.init(count);this.timeLeft=this.duration;this.bombs=[];this.spawnT=.7;this.outOrder=[];const w=this.app.w,h=this.app.h;this.area={x:w*.16,y:h*.15,w:w*.68,h:h*.66};const pr=Math.max(17,Math.min(w,h)*.034);this.players=Array.from({length:count},(_,p)=>({p,x:this.area.x+this.area.w*(.25+.5*(p%2)),y:this.area.y+this.area.h*(.28+.42*(p>1?1:0)),vx:0,vy:0,r:pr,lives:3,alive:true,inv:0,score:0}));}
+    spawnBomb(){const r=rand(Math.min(this.app.w,this.app.h)*.07,Math.min(this.app.w,this.app.h)*.13);this.bombs.push({x:rand(this.area.x+r,this.area.x+this.area.w-r),y:rand(this.area.y+r,this.area.y+this.area.h-r),r,warn:1.15,boom:.38,t:0,hit:new Set()});}
+    update(dt){this.tickTimer(dt);this.spawnT-=dt;if(this.spawnT<=0){this.spawnBomb();this.spawnT=rand(.65,1.05)*clamp(this.timeLeft/this.duration,.55,1);}const speed=Math.min(this.app.w,this.app.h)*.52;for(const pl of this.players){if(!pl.alive)continue;pl.inv=Math.max(0,pl.inv-dt);const c=this.controls[pl.p];pl.vx=pl.vx*.68+c.dx*speed*.32;pl.vy=pl.vy*.68+c.dy*speed*.32;pl.x=clamp(pl.x+pl.vx*dt,this.area.x+pl.r,this.area.x+this.area.w-pl.r);pl.y=clamp(pl.y+pl.vy*dt,this.area.y+pl.r,this.area.y+this.area.h-pl.r);pl.score+=dt;}for(let i=this.bombs.length-1;i>=0;i--){const b=this.bombs[i];b.t+=dt;if(b.t>b.warn&&b.t<b.warn+b.boom){for(const pl of this.players){if(!pl.alive||pl.inv>0||b.hit.has(pl.p))continue;if(dist(pl.x,pl.y,b.x,b.y)<pl.r+b.r){b.hit.add(pl.p);pl.lives--;pl.inv=.9;this.app.beep(120,.06,'sawtooth');this.app.buzz(40);if(pl.lives<=0){pl.alive=false;this.outOrder.push(pl.p);}}}}if(b.t>b.warn+b.boom)this.bombs.splice(i,1);}if(this.players.filter(p=>p.alive).length<=1)this.finish();}
+    finish(){const alive=this.players.filter(p=>p.alive).sort((a,b)=>b.score-a.score).map(p=>p.p);const order=alive.concat(this.outOrder.slice().reverse());this.app.finishGame(order.map((p,i)=>({p,score:this.count-i,label:i===0?'存活':'爆炸'})));}
+    endByScore(){this.finish();}
+    draw(){ctx.fillStyle='rgba(10,0,20,.26)';ctx.fillRect(0,0,this.app.w,this.app.h);ctx.fillStyle='rgba(255,255,255,.09)';roundRect(ctx,this.area.x,this.area.y,this.area.w,this.area.h,28);ctx.fill();ctx.strokeStyle=COLORS.white;ctx.lineWidth=8;ctx.stroke();for(const b of this.bombs){const warning=b.t<b.warn;ctx.save();ctx.globalAlpha=warning?.35:.86;ctx.fillStyle=warning?COLORS.red:COLORS.orange;ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=COLORS.white;ctx.lineWidth=warning?3:8;ctx.stroke();if(warning)drawText(ctx,String(Math.max(1,Math.ceil(b.warn-b.t))),b.x,b.y,Math.min(34,b.r*.55),COLORS.white,'center',COLORS.ink,4);ctx.restore();}for(const pl of this.players){this.drawPlayerAvatar(pl,pl.alive?(pl.inv>0?.55+Math.sin(now()*20)*.25:1):.2);drawText(ctx,'❤'.repeat(Math.max(0,pl.lives)),pl.x,pl.y+pl.r*1.5,pl.r*.45,COLORS.red,'center',COLORS.white,2);}this.drawHud('躲炸彈');this.drawControls();}
+  }
+
+  class SpacePongGame extends MovementGame {
+    constructor(app,data){super(app,data);this.duration=55;this.sides=[];this.paddles=[];this.ball=null;}
+    init(count){super.init(count);this.timeLeft=this.duration;const w=this.app.w,h=this.app.h;this.area={x:w*.14,y:h*.15,w:w*.72,h:h*.68};const sideSets={2:['left','right'],3:['left','right','bottom'],4:['left','right','top','bottom']};this.sides=sideSets[count];this.paddles=this.sides.map((side,p)=>({p,side,pos:.5,len:Math.min(side==='left'||side==='right'?this.area.h:this.area.w,Math.min(w,h)*.22),lives:3,hits:0,alive:true}));this.resetBall();}
+    resetBall(){const a=rand(0,Math.PI*2);let vx=Math.cos(a),vy=Math.sin(a);if(Math.abs(vx)<.25)vx+=Math.sign(vx||1)*.35;if(Math.abs(vy)<.15)vy+=Math.sign(vy||1)*.2;const sp=Math.min(this.app.w,this.app.h)*.55;this.ball={x:this.area.x+this.area.w/2,y:this.area.y+this.area.h/2,vx:vx*sp,vy:vy*sp,r:Math.max(10,Math.min(this.app.w,this.app.h)*.02),speed:sp};}
+    update(dt){this.tickTimer(dt);const paddleSpeed=.85;for(const pad of this.paddles){if(!pad.alive)continue;const c=this.controls[pad.p];const axis=(pad.side==='left'||pad.side==='right')?c.dy:c.dx;pad.pos=clamp(pad.pos+axis*paddleSpeed*dt,.08,.92);}const b=this.ball;b.x+=b.vx*dt;b.y+=b.vy*dt;const a=this.area;const inactiveBounce=(side)=>!this.paddles.some(p=>p.side===side&&p.alive);if(b.y-b.r<a.y&&inactiveBounce('top')){b.y=a.y+b.r;b.vy=Math.abs(b.vy);}if(b.y+b.r>a.y+a.h&&inactiveBounce('bottom')){b.y=a.y+a.h-b.r;b.vy=-Math.abs(b.vy);}if(b.x-b.r<a.x&&inactiveBounce('left')){b.x=a.x+b.r;b.vx=Math.abs(b.vx);}if(b.x+b.r>a.x+a.w&&inactiveBounce('right')){b.x=a.x+a.w-b.r;b.vx=-Math.abs(b.vx);}for(const pad of this.paddles){if(!pad.alive)continue;const hit=this.checkPaddle(pad);if(hit==='bounce'){pad.hits++;this.app.beep(520+pad.p*80,.04,'square');}else if(hit==='miss'){pad.lives--;this.app.beep(130,.06,'sawtooth');this.app.buzz(30);if(pad.lives<=0)pad.alive=false;this.resetBall();break;}}if(this.paddles.filter(p=>p.alive).length<=1)this.endByScore();}
+    checkPaddle(pad){const b=this.ball,a=this.area;const t=16;let center;if(pad.side==='left'&&b.x-b.r<=a.x&&b.vx<0){center=a.y+a.h*pad.pos;if(Math.abs(b.y-center)<=pad.len/2){b.x=a.x+b.r;b.vx=Math.abs(b.vx)*1.035;b.vy+=(b.y-center)*4;return'bounce';}return'miss';}if(pad.side==='right'&&b.x+b.r>=a.x+a.w&&b.vx>0){center=a.y+a.h*pad.pos;if(Math.abs(b.y-center)<=pad.len/2){b.x=a.x+a.w-b.r;b.vx=-Math.abs(b.vx)*1.035;b.vy+=(b.y-center)*4;return'bounce';}return'miss';}if(pad.side==='top'&&b.y-b.r<=a.y&&b.vy<0){center=a.x+a.w*pad.pos;if(Math.abs(b.x-center)<=pad.len/2){b.y=a.y+b.r;b.vy=Math.abs(b.vy)*1.035;b.vx+=(b.x-center)*4;return'bounce';}return'miss';}if(pad.side==='bottom'&&b.y+b.r>=a.y+a.h&&b.vy>0){center=a.x+a.w*pad.pos;if(Math.abs(b.x-center)<=pad.len/2){b.y=a.y+a.h-b.r;b.vy=-Math.abs(b.vy)*1.035;b.vx+=(b.x-center)*4;return'bounce';}return'miss';}return null;}
+    endByScore(){this.app.finishGame(this.paddles.map(p=>({p:p.p,score:p.lives*10+p.hits,label:`❤${p.lives} 擋${p.hits}`})));}
+    drawPaddle(p){const a=this.area;ctx.fillStyle=PLAYER_COLORS[p.p];ctx.strokeStyle=COLORS.white;ctx.lineWidth=6;if(p.side==='left'||p.side==='right'){const x=p.side==='left'?a.x:a.x+a.w;const y=a.y+a.h*p.pos-p.len/2;roundRect(ctx,x-10,y,20,p.len,10);ctx.fill();ctx.stroke();drawText(ctx,`P${p.p+1}`,x+(p.side==='left'?-44:44),a.y+a.h*p.pos,24,COLORS.white,'center',COLORS.ink,4);}else{const x=a.x+a.w*p.pos-p.len/2;const y=p.side==='top'?a.y:a.y+a.h;roundRect(ctx,x,y-10,p.len,20,10);ctx.fill();ctx.stroke();drawText(ctx,`P${p.p+1}`,a.x+a.w*p.pos,y+(p.side==='top'?-34:40),24,COLORS.white,'center',COLORS.ink,4);}}
+    draw(){ctx.fillStyle='#251039';ctx.fillRect(0,0,this.app.w,this.app.h);const a=this.area;ctx.fillStyle='rgba(255,255,255,.07)';roundRect(ctx,a.x,a.y,a.w,a.h,20);ctx.fill();ctx.strokeStyle='rgba(255,255,255,.45)';ctx.lineWidth=6;ctx.stroke();for(let i=0;i<32;i++){ctx.fillStyle='rgba(255,255,255,.7)';ctx.beginPath();ctx.arc(rand(a.x,a.x+a.w),rand(a.y,a.y+a.h),rand(1,3),0,Math.PI*2);ctx.fill();}for(const p of this.paddles)this.drawPaddle(p);ctx.fillStyle=COLORS.white;ctx.beginPath();ctx.arc(this.ball.x,this.ball.y,this.ball.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=COLORS.cyan;ctx.lineWidth=4;ctx.stroke();for(const p of this.paddles){const y=60+p.p*34;drawText(ctx,`P${p.p+1} ❤${p.lives}`,p.p%2?this.app.w-72:72,y,22,PLAYER_COLORS[p.p],'center',COLORS.white,2);}this.drawHud('太空守門');this.drawControls();}
+  }
+
+  GAMES.find(g=>g.id==='push').classRef = PushArenaGame;
+  GAMES.find(g=>g.id==='coin').classRef = CoinDashGame;
+  GAMES.find(g=>g.id==='tap').classRef = ReactionTapGame;
+  GAMES.find(g=>g.id==='bomb').classRef = BombDodgeGame;
+  GAMES.find(g=>g.id==='pong').classRef = SpacePongGame;
+
+  new App();
+})();
+</script>
+</body>
+</html>
