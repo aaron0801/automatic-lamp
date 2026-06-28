@@ -8,6 +8,8 @@
   <meta name="apple-mobile-web-app-title" content="一機開戰" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black" />
   <meta name="theme-color" content="#150020" />
+  <meta name="format-detection" content="telephone=no,email=no,address=no" />
+  <meta name="apple-touch-fullscreen" content="yes" />
   <title>一機開戰｜One Phone Party</title>
   <style>
     :root {
@@ -15,7 +17,14 @@
       --ink: #251035;
       --white: #ffffff;
     }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+      -webkit-touch-callout: none !important;
+      -webkit-user-drag: none !important;
+    }
     html, body {
       width: 100%;
       height: 100%;
@@ -26,6 +35,11 @@
       background: #150020;
       touch-action: none;
       overscroll-behavior: none;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+      -webkit-touch-callout: none !important;
+      -webkit-user-drag: none !important;
+      -webkit-text-size-adjust: 100%;
       font-family: "Arial Rounded MT Bold", "Trebuchet MS", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     }
     body {
@@ -40,6 +54,10 @@
       height: 100dvh;
       touch-action: none;
       background: #150020;
+      -webkit-user-select: none !important;
+      user-select: none !important;
+      -webkit-touch-callout: none !important;
+      -webkit-user-drag: none !important;
     }
   </style>
 </head>
@@ -52,20 +70,39 @@
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
 
+  // iOS/Safari 防止長按叫出「拷貝 / 翻譯 / 全選」選單。
+  // 這款遊戲全程用 canvas，不需要任何文字選取。
+  function blockBrowserGesture(e) {
+    if (e && e.cancelable) e.preventDefault();
+    return false;
+  }
+  ['touchstart','touchmove','touchend','touchcancel','selectstart','dragstart','contextmenu','gesturestart','gesturechange','gestureend']
+    .forEach(type => document.addEventListener(type, blockBrowserGesture, { passive: false, capture: true }));
+  document.addEventListener('selectionchange', () => {
+    const sel = window.getSelection && window.getSelection();
+    if (sel && sel.rangeCount) sel.removeAllRanges();
+  }, { passive: true });
+  canvas.setAttribute('aria-label', '一機開戰遊戲畫布');
+  canvas.style.webkitUserSelect = 'none';
+  canvas.style.webkitTouchCallout = 'none';
+
   const COLORS = {
-    purple: '#7610C4',
-    purpleDark: '#3B0B5E',
-    purpleDeep: '#220535',
-    cyan: '#35C9F4',
-    blue: '#4B7BED',
-    green: '#36D909',
-    yellow: '#FFD318',
-    red: '#FF3A35',
-    pink: '#F83372',
-    orange: '#FF961A',
+    purple: '#7A18DD',
+    purpleDark: '#2B0A55',
+    purpleDeep: '#110021',
+    cyan: '#32D9FF',
+    blue: '#4C7DFF',
+    green: '#34E330',
+    yellow: '#FFD747',
+    red: '#FF4254',
+    pink: '#FF4B95',
+    orange: '#FF9B24',
     white: '#FFFFFF',
-    ink: '#24122E',
-    black: '#09060D'
+    ink: '#120722',
+    black: '#06030B',
+    panel: '#1A0A35',
+    panel2: '#2E1160',
+    line: 'rgba(255,255,255,.32)'
   };
 
   const PLAYER_COLORS = ['#FF3131', '#4580FF', '#35D40C', '#FFD21A'];
@@ -206,25 +243,37 @@
     contains(x, y) { return !this.disabled && x >= this.x && x <= this.x + this.w && y >= this.y && y <= this.y + this.h; }
     draw(ctx, t = 0) {
       ctx.save();
-      ctx.globalAlpha = this.disabled ? .45 : 1;
-      ctx.shadowColor = 'rgba(0,0,0,.35)';
+      ctx.globalAlpha = this.disabled ? .42 : 1;
+      const r = Math.min(22, this.h * .28);
+      ctx.shadowColor = 'rgba(0,0,0,.42)';
       ctx.shadowBlur = 0;
-      ctx.shadowOffsetY = Math.max(5, this.h * .08);
-      ctx.fillStyle = COLORS.ink;
-      roundRect(ctx, this.x - 6, this.y + 7, this.w + 12, this.h + 8, 20); ctx.fill();
+      ctx.shadowOffsetY = Math.max(6, this.h * .10);
+      ctx.fillStyle = '#0B0617';
+      roundRect(ctx, this.x + 6, this.y + Math.max(8, this.h*.10), this.w, this.h, r); ctx.fill();
       ctx.shadowColor = 'transparent';
-      ctx.fillStyle = this.color;
-      roundRect(ctx, this.x, this.y, this.w, this.h, 18); ctx.fill();
-      ctx.lineWidth = 6;
-      ctx.strokeStyle = COLORS.white;
+      const grad = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.h);
+      grad.addColorStop(0, this.color);
+      grad.addColorStop(.62, this.color);
+      grad.addColorStop(1, 'rgba(0,0,0,.26)');
+      ctx.fillStyle = grad;
+      roundRect(ctx, this.x, this.y, this.w, this.h, r); ctx.fill();
+      ctx.lineWidth = Math.max(4, this.h * .06);
+      ctx.strokeStyle = 'rgba(255,255,255,.92)';
       ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,.22)';
-      roundRect(ctx, this.x + 10, this.y + 10, this.w - 20, this.h * .36, 12); ctx.fill();
-      if (this.icon) drawIcon(ctx, this.icon, this.x + this.h * .48, this.y + this.h * .5, this.h * .55, COLORS.white);
-      const tx = this.icon ? this.x + this.w * .56 : this.x + this.w / 2;
-      const mainSize = this.small ? this.h * .34 : this.h * .38;
-      drawText(ctx, this.label, tx, this.y + this.h * (this.sub ? .42 : .52), mainSize, COLORS.white, 'center', COLORS.ink, 7);
-      if (this.sub) drawText(ctx, this.sub, tx, this.y + this.h * .73, this.h * .18, COLORS.white, 'center', COLORS.ink, 4);
+      ctx.lineWidth = Math.max(2, this.h * .025);
+      ctx.strokeStyle = 'rgba(0,0,0,.28)';
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.18)';
+      roundRect(ctx, this.x + this.w*.045, this.y + this.h*.12, this.w*.91, this.h*.28, r*.55); ctx.fill();
+      if (this.icon) {
+        ctx.fillStyle = 'rgba(0,0,0,.20)';
+        ctx.beginPath(); ctx.arc(this.x + this.h * .50, this.y + this.h * .52, this.h * .32, 0, Math.PI*2); ctx.fill();
+        drawIcon(ctx, this.icon, this.x + this.h * .50, this.y + this.h * .52, this.h * .58, COLORS.white);
+      }
+      const tx = this.icon ? this.x + this.w * .58 : this.x + this.w / 2;
+      const mainSize = this.small ? this.h * .32 : this.h * .36;
+      drawText(ctx, this.label, tx, this.y + this.h * (this.sub ? .42 : .52), mainSize, COLORS.white, 'center', COLORS.ink, Math.max(4, this.h*.075));
+      if (this.sub) drawText(ctx, this.sub, tx, this.y + this.h * .72, this.h * .16, 'rgba(255,255,255,.92)', 'center', COLORS.ink, Math.max(2, this.h*.04));
       ctx.restore();
     }
   }
@@ -397,8 +446,8 @@
     }
 
     getHomeButton() {
-      const size = Math.min(this.w, this.h) * .09;
-      return new Button(this.w / 2 - size / 2, this.h - size - 12, size, size, '', '', 'rgba(255,255,255,.22)', () => {
+      const size = Math.min(this.w, this.h) * .065;
+      return new Button(this.w / 2 - size / 2, this.h - size - Math.max(10, this.safeBottom*.3), size, size, '', '', 'rgba(255,255,255,.18)', () => {
         this.party.active = false;
         this.setState('games');
       }, { icon: 'home', small: true });
@@ -439,45 +488,42 @@
     drawBackground() {
       const w = this.w, h = this.h;
       const grad = ctx.createLinearGradient(0, 0, w, h);
-      grad.addColorStop(0, '#3D005E'); grad.addColorStop(.48, '#7010C6'); grad.addColorStop(1, '#1A0030');
+      grad.addColorStop(0, '#19002F');
+      grad.addColorStop(.48, '#6611C6');
+      grad.addColorStop(1, '#100021');
       ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+
       ctx.save();
       ctx.globalAlpha = .18;
-      ctx.fillStyle = '#FFFFFF';
-      ctx.beginPath();
-      ctx.ellipse(w * .50, h * .43, w * .38, h * .26, 0, 0, Math.PI * 2);
-      ctx.fill();
+      const glow = ctx.createRadialGradient(w*.5, h*.28, 10, w*.5, h*.28, Math.max(w,h)*.55);
+      glow.addColorStop(0, '#B64BFF');
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0,0,w,h);
       ctx.restore();
-      const tile = Math.max(96, Math.min(w, h) * .18);
+
+      const tile = Math.max(92, Math.min(w, h) * .17);
       ctx.save();
-      ctx.globalAlpha = .14;
+      ctx.globalAlpha = .09;
       for (let yy = -tile; yy < h + tile; yy += tile) {
         for (let xx = -tile; xx < w + tile; xx += tile) {
-          const idx = Math.abs(Math.floor(xx / tile) + Math.floor(yy / tile)) % 4;
-          ctx.fillStyle = 'rgba(255,255,255,.12)';
-          roundRect(ctx, xx + tile * .1, yy + tile * .12, tile * .72, tile * .58, tile * .12); ctx.fill();
-          const cx = xx + tile * .46, cy = yy + tile * .41;
-          ctx.strokeStyle = '#170026'; ctx.lineWidth = 5;
-          ctx.fillStyle = [COLORS.red, COLORS.green, COLORS.cyan, COLORS.yellow][idx];
-          if (idx === 0) {
-            ctx.beginPath(); ctx.arc(cx, cy, tile * .12, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-            ctx.beginPath(); ctx.arc(cx - tile*.06, cy - tile*.02, tile*.018, 0, Math.PI*2); ctx.arc(cx + tile*.06, cy - tile*.02, tile*.018, 0, Math.PI*2); ctx.fillStyle = COLORS.white; ctx.fill();
-          } else if (idx === 1) {
-            roundRect(ctx, cx - tile*.12, cy - tile*.1, tile*.24, tile*.2, tile*.04); ctx.fill(); ctx.stroke();
-            ctx.beginPath(); ctx.arc(cx - tile*.05, cy, tile*.018, 0, Math.PI*2); ctx.arc(cx + tile*.05, cy, tile*.018, 0, Math.PI*2); ctx.fillStyle = COLORS.white; ctx.fill();
-          } else if (idx === 2) {
-            ctx.beginPath(); ctx.arc(cx, cy, tile*.12, Math.PI, 0); ctx.lineTo(cx+tile*.12, cy+tile*.08); ctx.lineTo(cx-tile*.12, cy+tile*.08); ctx.closePath(); ctx.fill(); ctx.stroke();
-          } else {
-            ctx.beginPath(); ctx.moveTo(cx, cy - tile*.13); ctx.lineTo(cx + tile*.13, cy); ctx.lineTo(cx, cy + tile*.13); ctx.lineTo(cx - tile*.13, cy); ctx.closePath(); ctx.fill(); ctx.stroke();
-          }
+          ctx.fillStyle = 'rgba(255,255,255,.10)';
+          roundRect(ctx, xx + tile * .16, yy + tile * .17, tile * .62, tile * .52, tile * .11); ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 2; ctx.stroke();
+          const cx = xx + tile * .47, cy = yy + tile * .43;
+          ctx.strokeStyle = 'rgba(20,0,35,.65)'; ctx.lineWidth = 5;
+          ctx.fillStyle = ['#FF4254', '#34E330', '#32D9FF', '#FFD747'][Math.abs(Math.floor(xx/tile)+Math.floor(yy/tile))%4];
+          ctx.beginPath();
+          ctx.arc(cx, cy, tile*.075, 0, Math.PI*2);
+          ctx.fill(); ctx.stroke();
         }
       }
       ctx.restore();
 
-      this.drawCornerBurst(0, 0, Math.min(w,h)*.22, COLORS.yellow, -1, -1);
-      this.drawCornerBurst(w, 0, Math.min(w,h)*.22, COLORS.blue, 1, -1);
-      this.drawCornerBurst(0, h, Math.min(w,h)*.22, COLORS.red, -1, 1);
-      this.drawCornerBurst(w, h, Math.min(w,h)*.22, COLORS.green, 1, 1);
+      this.drawCornerBurst(0, 0, Math.min(w,h)*.20, COLORS.yellow, -1, -1);
+      this.drawCornerBurst(w, 0, Math.min(w,h)*.20, COLORS.blue, 1, -1);
+      this.drawCornerBurst(0, h, Math.min(w,h)*.20, COLORS.red, -1, 1);
+      this.drawCornerBurst(w, h, Math.min(w,h)*.20, COLORS.green, 1, 1);
     }
 
     drawCornerBurst(x, y, r, color, sx, sy) {
@@ -501,7 +547,7 @@
       const w = this.w;
       const y = this.safeTop;
       const bh = Math.max(32, Math.min(42, this.h * .055));
-      const text = this.party.active ? `${this.playerCount}P｜第 ${this.party.round}/${this.party.total} 局` : `${this.playerCount}P｜V2`;
+      const text = this.party.active ? `${this.playerCount}P｜第 ${this.party.round}/${this.party.total} 局` : `${this.playerCount}P｜V3`;
       const bw = Math.max(156, Math.min(250, w * .18));
       ctx.fillStyle = 'rgba(8,0,18,.58)';
       roundRect(ctx, w/2 - bw/2, y, bw, bh, bh*.45); ctx.fill();
@@ -526,43 +572,48 @@
     drawLogo(y, scale = 1) {
       const w = this.w;
       ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,.24)';
-      roundRect(ctx, w/2 - 250*scale, y - 74*scale, 500*scale, 146*scale, 34*scale); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.34)'; ctx.lineWidth = 4*scale; ctx.stroke();
-      drawText(ctx, '一機開戰', w/2, y - 22*scale, 78*scale, COLORS.yellow, 'center', COLORS.ink, 10*scale);
-      drawText(ctx, 'ONE PHONE PARTY', w/2, y + 44*scale, 30*scale, COLORS.white, 'center', COLORS.ink, 6*scale);
+      const bw = 530 * scale, bh = 158 * scale;
+      ctx.fillStyle = 'rgba(10,2,24,.48)';
+      roundRect(ctx, w/2 - bw/2, y - bh*.53, bw, bh, 34*scale); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 3*scale; ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.10)';
+      roundRect(ctx, w/2 - bw*.39, y - bh*.42, bw*.23, bh*.23, 16*scale); ctx.fill();
+      roundRect(ctx, w/2 + bw*.16, y - bh*.42, bw*.23, bh*.23, 16*scale); ctx.fill();
+      drawText(ctx, `${this.playerCount}P`, w/2 - bw*.275, y - bh*.305, 30*scale, COLORS.white, 'center', COLORS.ink, 5*scale);
+      drawText(ctx, 'V3', w/2 + bw*.275, y - bh*.305, 30*scale, COLORS.white, 'center', COLORS.ink, 5*scale);
+      drawText(ctx, '一機開戰', w/2, y - 10*scale, 78*scale, COLORS.yellow, 'center', COLORS.ink, 10*scale);
+      drawText(ctx, 'ONE PHONE PARTY', w/2, y + 52*scale, 30*scale, COLORS.white, 'center', COLORS.ink, 6*scale);
       ctx.restore();
     }
 
     drawHome() {
       const w = this.w, h = this.h;
-      this.drawTopCurrency();
-      const logoScale = Math.min(.92, Math.max(.62, Math.min(w / 1500, h / 760)));
-      const logoY = Math.max(this.safeTop + 96 * logoScale, h * .21);
+      const logoScale = Math.min(.9, Math.max(.58, Math.min(w / 1500, h / 780)));
+      const logoY = Math.max(this.safeTop + 96 * logoScale, h * .23);
       this.drawLogo(logoY, logoScale);
 
-      const panelW = Math.min(780, w * .74);
-      const panelH = Math.min(270, h * .38);
+      const panelW = Math.min(760, w * .68);
+      const panelH = Math.min(250, h * .34);
       const panelX = w/2 - panelW/2;
-      const panelY = Math.max(logoY + 80 * logoScale, h * .39);
-      ctx.fillStyle = 'rgba(8,0,18,.46)';
-      roundRect(ctx, panelX, panelY, panelW, panelH, 32); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.34)'; ctx.lineWidth = 3; ctx.stroke();
+      const panelY = Math.max(logoY + 96 * logoScale, h * .43);
+      ctx.fillStyle = 'rgba(12,2,28,.42)';
+      roundRect(ctx, panelX, panelY, panelW, panelH, 34); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 3; ctx.stroke();
 
-      const gap = Math.min(20, h * .028);
-      const bh = Math.max(54, Math.min(72, panelH * .26));
+      const gap = Math.min(22, h * .03);
+      const bh = Math.max(58, Math.min(78, panelH * .27));
       const bw = Math.min(340, (panelW - gap * 3) / 2);
       const x1 = w / 2 - bw - gap/2;
       const x2 = w / 2 + gap/2;
-      const y1 = panelY + panelH * .20;
-      const b1 = new Button(x1, y1, bw, bh, '開始遊戲', '選人數', COLORS.red, () => { this.pendingParty = false; this.setState('players'); }, { small:true });
-      const b2 = new Button(x2, y1, bw, bh, '小遊戲選單', `${this.playerCount}人`, COLORS.blue, () => this.setState('games'), { small:true });
-      const b3 = new Button(w/2 - bw*.66, y1 + bh + gap, bw*1.32, bh, '隨機派對', '連玩 5 局', COLORS.green, () => { this.pendingParty = true; this.setState('players'); }, { small:true });
-      const b4 = new Button(panelX + 18, panelY + 18, Math.min(82, panelW*.12), Math.min(62, panelH*.23), '', '', COLORS.cyan, () => this.setState('settings'), { icon: 'gear', small: true });
+      const y1 = panelY + panelH * .18;
+      const b1 = new Button(x1, y1, bw, bh, '開始派對', '先選人數', COLORS.red, () => { this.pendingParty = false; this.setState('players'); }, { icon:'push', small:true });
+      const b2 = new Button(x2, y1, bw, bh, '選小遊戲', `${this.playerCount} 人模式`, COLORS.blue, () => this.setState('games'), { icon:'tap', small:true });
+      const b3 = new Button(w/2 - bw*.68, y1 + bh + gap, bw*1.36, bh, '快速亂鬥', '隨機連玩 5 局', COLORS.green, () => { this.pendingParty = true; this.setState('players'); }, { icon:'coin', small:true });
+      const b4 = new Button(28, this.safeTop, Math.min(88, this.h*.12), Math.min(66, this.h*.09), '', '', COLORS.cyan, () => this.setState('settings'), { icon: 'gear', small: true });
       [b1,b2,b3,b4].forEach(b => { b.draw(ctx); this.buttons.push(b); });
 
-      const helper = this.isStandalone ? '全螢幕模式｜把手機橫放多人圍著玩' : 'Safari 上方網址列無法用程式關掉；加到主畫面可全螢幕';
-      drawText(ctx, helper, w/2, Math.min(h - this.safeBottom - 20, panelY + panelH + 42), Math.max(15, Math.min(24, h*.032)), 'rgba(255,255,255,.86)', 'center', COLORS.ink, 3);
+      const helper = this.isStandalone ? '已是全螢幕模式｜拖曳自己的區域操作' : '建議加入主畫面後開啟；可減少 Safari 介面遮擋';
+      drawText(ctx, helper, w/2, Math.min(h - this.safeBottom - 18, panelY + panelH + 36), Math.max(15, Math.min(23, h*.03)), 'rgba(255,255,255,.84)', 'center', COLORS.ink, 3);
     }
 
     drawPlayers() {
@@ -728,7 +779,7 @@
     }
     init(count) {
       this.count = count;
-      this.controls = Array.from({length:count}, () => ({ active:false, id:null, dx:0, dy:0, tx:0, ty:0 }));
+      this.controls = Array.from({length:count}, () => ({ active:false, id:null, dx:0, dy:0, tx:0, ty:0, ox:0, oy:0, lastTap:0, cooldownUntil:0 }));
       this.timeLeft = this.duration;
     }
     start() { this.started = true; }
@@ -739,7 +790,10 @@
       if (p >= 0 && p < this.count) {
         const c = this.controls[p];
         if (!c.active) {
-          c.active = true; c.id = id; c.tx = x; c.ty = y;
+          const t = now();
+          if (t - (c.lastTap || 0) < .28) this.triggerAction(p);
+          c.lastTap = t;
+          c.active = true; c.id = id; c.ox = x; c.oy = y; c.tx = x; c.ty = y; c.dx = 0; c.dy = 0;
           this.pointerOwner.set(id, p);
           this.updateControl(p, x, y);
         }
@@ -752,20 +806,36 @@
     pointerUp(id, x, y) {
       const p = this.pointerOwner.get(id);
       if (p !== undefined) {
-        this.controls[p] = { active:false, id:null, dx:0, dy:0, tx:x, ty:y };
+        const old = this.controls[p];
+        this.controls[p] = { active:false, id:null, dx:0, dy:0, tx:x, ty:y, ox:old.ox, oy:old.oy, lastTap:old.lastTap || 0, cooldownUntil:old.cooldownUntil || 0 };
         this.pointerOwner.delete(id);
       }
     }
     updateControl(p, x, y) {
-      const z = this.app.playerZones()[p];
-      const max = Math.min(this.app.w, this.app.h) * .12;
-      const dx = x - z.cx, dy = y - z.cy;
+      const c = this.controls[p];
+      const max = Math.min(this.app.w, this.app.h) * .105;
+      const dx = x - (c.ox || x), dy = y - (c.oy || y);
       const d = Math.hypot(dx, dy);
       const k = d > 0 ? Math.min(1, d / max) / d : 0;
-      this.controls[p].dx = dx * k;
-      this.controls[p].dy = dy * k;
-      this.controls[p].tx = x;
-      this.controls[p].ty = y;
+      c.dx = dx * k;
+      c.dy = dy * k;
+      c.tx = x;
+      c.ty = y;
+    }
+    triggerAction(p) {
+      const c = this.controls[p];
+      const t = now();
+      if (!c || (c.cooldownUntil || 0) > t) return;
+      const pl = this.players && this.players.find(x => x.p === p);
+      if (!pl || pl.alive === false) return;
+      const sp = Math.min(this.app.w, this.app.h) * .72;
+      const dx = c.dx || 0, dy = c.dy || 0;
+      if (Math.hypot(dx, dy) < .18) return;
+      pl.vx = (pl.vx || 0) + dx * sp;
+      pl.vy = (pl.vy || 0) + dy * sp;
+      c.cooldownUntil = t + 1.05;
+      this.app.beep(980, .045, 'square');
+      this.app.buzz(22);
     }
     tickTimer(dt) {
       this.timeLeft -= dt;
@@ -786,27 +856,35 @@
     }
     drawControls() {
       const zones = this.app.playerZones();
-      const r = Math.min(this.app.w, this.app.h) * .1;
+      const r = Math.min(this.app.w, this.app.h) * .072;
       for (let p=0;p<this.count;p++) {
         const z = zones[p], c = this.controls[p];
+        const baseX = c.active ? c.ox : z.cx;
+        const baseY = c.active ? c.oy : z.cy;
+        const knobX = c.active ? clamp(c.tx, baseX-r*.95, baseX+r*.95) : baseX;
+        const knobY = c.active ? clamp(c.ty, baseY-r*.95, baseY+r*.95) : baseY;
         ctx.save();
-        ctx.globalAlpha = .85;
+        ctx.globalAlpha = c.active ? .92 : .38;
         ctx.fillStyle = PLAYER_COLORS[p];
-        ctx.beginPath(); ctx.arc(z.cx, z.cy, r, 0, Math.PI*2); ctx.fill();
-        ctx.strokeStyle = COLORS.white; ctx.lineWidth = Math.max(5, r*.09); ctx.stroke();
-        ctx.globalAlpha = .35;
+        ctx.beginPath(); ctx.arc(baseX, baseY, r, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,.86)'; ctx.lineWidth = Math.max(4, r*.08); ctx.stroke();
+        ctx.globalAlpha = c.active ? .35 : .16;
         ctx.fillStyle = COLORS.white;
-        ctx.beginPath(); ctx.arc(z.cx, z.cy, r*.56, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(baseX, baseY, r*.55, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1;
-        const tx = z.cx + c.dx * r * .56;
-        const ty = z.cy + c.dy * r * .56;
-        ctx.fillStyle = 'rgba(0,0,0,.22)';
-        ctx.beginPath(); ctx.arc(tx, ty, r*.28, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,.28)';
+        ctx.beginPath(); ctx.arc(knobX, knobY, r*.32, 0, Math.PI*2); ctx.fill();
         ctx.fillStyle = COLORS.white;
-        ctx.beginPath(); ctx.arc(tx, ty, r*.2, 0, Math.PI*2); ctx.fill();
-        drawText(ctx, PLAYER_NAMES[p], z.cx, z.cy, r*.34, COLORS.white, 'center', COLORS.ink, 4);
+        ctx.beginPath(); ctx.arc(knobX, knobY, r*.22, 0, Math.PI*2); ctx.fill();
+        drawText(ctx, PLAYER_NAMES[p], baseX, baseY, r*.34, COLORS.white, 'center', COLORS.ink, 4);
+        const remain = Math.max(0, (c.cooldownUntil || 0) - now());
+        if (remain > 0) {
+          ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.arc(baseX, baseY, r*1.18, -Math.PI/2, -Math.PI/2 + Math.PI*2*(1 - remain/1.05)); ctx.stroke();
+        }
         ctx.restore();
       }
+      drawText(ctx, '拖曳控制｜雙擊衝刺', this.app.w/2, this.app.h - this.app.safeBottom - 14, Math.min(20, this.app.h*.028), 'rgba(255,255,255,.66)', 'center', COLORS.ink, 3);
     }
     drawPlayerAvatar(pl, alpha = 1) {
       ctx.save();
@@ -837,7 +915,7 @@
       this.timeLeft = this.duration;
       this.outOrder = [];
       const w=this.app.w,h=this.app.h;
-      this.cx=w/2; this.cy=h*.48; this.R=Math.min(w,h)*.33;
+      this.cx=w/2; this.cy=h*.48; this.baseR=Math.min(w,h)*.33; this.R=this.baseR;
       const pr=Math.max(18, Math.min(w,h)*.038);
       this.players = Array.from({length:count}, (_,p) => {
         const a = -Math.PI/2 + p*Math.PI*2/count;
@@ -846,7 +924,8 @@
     }
     update(dt) {
       this.tickTimer(dt);
-      const speed = Math.min(this.app.w,this.app.h)*.5;
+      this.R = this.baseR * clamp(.72 + (this.timeLeft / this.duration) * .28, .72, 1);
+      const speed = Math.min(this.app.w,this.app.h)*.52;
       for (const pl of this.players) {
         if (!pl.alive) continue;
         const c = this.controls[pl.p];
@@ -990,11 +1069,16 @@
     constructor(app,data){super(app,data);this.duration=55;this.sides=[];this.paddles=[];this.ball=null;}
     init(count){super.init(count);this.timeLeft=this.duration;const w=this.app.w,h=this.app.h;this.area={x:w*.14,y:h*.15,w:w*.72,h:h*.68};const sideSets={2:['left','right'],3:['left','right','bottom'],4:['left','right','top','bottom']};this.sides=sideSets[count];this.paddles=this.sides.map((side,p)=>({p,side,pos:.5,len:Math.min(side==='left'||side==='right'?this.area.h:this.area.w,Math.min(w,h)*.22),lives:3,hits:0,alive:true}));this.resetBall();}
     resetBall(){const a=rand(0,Math.PI*2);let vx=Math.cos(a),vy=Math.sin(a);if(Math.abs(vx)<.25)vx+=Math.sign(vx||1)*.35;if(Math.abs(vy)<.15)vy+=Math.sign(vy||1)*.2;const sp=Math.min(this.app.w,this.app.h)*.55;this.ball={x:this.area.x+this.area.w/2,y:this.area.y+this.area.h/2,vx:vx*sp,vy:vy*sp,r:Math.max(10,Math.min(this.app.w,this.app.h)*.02),speed:sp};}
+    pointerDown(id,x,y){const p=this.zoneAt(x,y);if(p<0||p>=this.count)return;this.pointerOwner.set(id,p);this.setPaddleFromTouch(p,x,y);}
+    pointerMove(id,x,y){const p=this.pointerOwner.get(id);if(p!==undefined)this.setPaddleFromTouch(p,x,y);}
+    pointerUp(id,x,y){this.pointerOwner.delete(id);}
+    setPaddleFromTouch(p,x,y){const pad=this.paddles[p];if(!pad||!pad.alive)return;const a=this.area;if(pad.side==='left'||pad.side==='right')pad.pos=clamp((y-a.y)/a.h,.08,.92);else pad.pos=clamp((x-a.x)/a.w,.08,.92);}
+    drawPongControls(){const a=this.area;ctx.save();ctx.globalAlpha=.16;for(const pad of this.paddles){ctx.fillStyle=PLAYER_COLORS[pad.p];if(pad.side==='left')roundRect(ctx,0,a.y,Math.max(110,this.app.w*.08),a.h,22);else if(pad.side==='right')roundRect(ctx,this.app.w-Math.max(110,this.app.w*.08),a.y,Math.max(110,this.app.w*.08),a.h,22);else if(pad.side==='top')roundRect(ctx,a.x,0,a.w,Math.max(90,this.app.h*.10),22);else roundRect(ctx,a.x,this.app.h-Math.max(90,this.app.h*.10),a.w,Math.max(90,this.app.h*.10),22);ctx.fill();}ctx.restore();drawText(ctx,'拖曳自己的邊控制擋板',this.app.w/2,this.app.h-this.app.safeBottom-14,Math.min(20,this.app.h*.028),'rgba(255,255,255,.66)','center',COLORS.ink,3);}
     update(dt){this.tickTimer(dt);const paddleSpeed=.85;for(const pad of this.paddles){if(!pad.alive)continue;const c=this.controls[pad.p];const axis=(pad.side==='left'||pad.side==='right')?c.dy:c.dx;pad.pos=clamp(pad.pos+axis*paddleSpeed*dt,.08,.92);}const b=this.ball;b.x+=b.vx*dt;b.y+=b.vy*dt;const a=this.area;const inactiveBounce=(side)=>!this.paddles.some(p=>p.side===side&&p.alive);if(b.y-b.r<a.y&&inactiveBounce('top')){b.y=a.y+b.r;b.vy=Math.abs(b.vy);}if(b.y+b.r>a.y+a.h&&inactiveBounce('bottom')){b.y=a.y+a.h-b.r;b.vy=-Math.abs(b.vy);}if(b.x-b.r<a.x&&inactiveBounce('left')){b.x=a.x+b.r;b.vx=Math.abs(b.vx);}if(b.x+b.r>a.x+a.w&&inactiveBounce('right')){b.x=a.x+a.w-b.r;b.vx=-Math.abs(b.vx);}for(const pad of this.paddles){if(!pad.alive)continue;const hit=this.checkPaddle(pad);if(hit==='bounce'){pad.hits++;this.app.beep(520+pad.p*80,.04,'square');}else if(hit==='miss'){pad.lives--;this.app.beep(130,.06,'sawtooth');this.app.buzz(30);if(pad.lives<=0)pad.alive=false;this.resetBall();break;}}if(this.paddles.filter(p=>p.alive).length<=1)this.endByScore();}
     checkPaddle(pad){const b=this.ball,a=this.area;const t=16;let center;if(pad.side==='left'&&b.x-b.r<=a.x&&b.vx<0){center=a.y+a.h*pad.pos;if(Math.abs(b.y-center)<=pad.len/2){b.x=a.x+b.r;b.vx=Math.abs(b.vx)*1.035;b.vy+=(b.y-center)*4;return'bounce';}return'miss';}if(pad.side==='right'&&b.x+b.r>=a.x+a.w&&b.vx>0){center=a.y+a.h*pad.pos;if(Math.abs(b.y-center)<=pad.len/2){b.x=a.x+a.w-b.r;b.vx=-Math.abs(b.vx)*1.035;b.vy+=(b.y-center)*4;return'bounce';}return'miss';}if(pad.side==='top'&&b.y-b.r<=a.y&&b.vy<0){center=a.x+a.w*pad.pos;if(Math.abs(b.x-center)<=pad.len/2){b.y=a.y+b.r;b.vy=Math.abs(b.vy)*1.035;b.vx+=(b.x-center)*4;return'bounce';}return'miss';}if(pad.side==='bottom'&&b.y+b.r>=a.y+a.h&&b.vy>0){center=a.x+a.w*pad.pos;if(Math.abs(b.x-center)<=pad.len/2){b.y=a.y+a.h-b.r;b.vy=-Math.abs(b.vy)*1.035;b.vx+=(b.x-center)*4;return'bounce';}return'miss';}return null;}
     endByScore(){this.app.finishGame(this.paddles.map(p=>({p:p.p,score:p.lives*10+p.hits,label:`❤${p.lives} 擋${p.hits}`})));}
     drawPaddle(p){const a=this.area;ctx.fillStyle=PLAYER_COLORS[p.p];ctx.strokeStyle=COLORS.white;ctx.lineWidth=6;if(p.side==='left'||p.side==='right'){const x=p.side==='left'?a.x:a.x+a.w;const y=a.y+a.h*p.pos-p.len/2;roundRect(ctx,x-10,y,20,p.len,10);ctx.fill();ctx.stroke();drawText(ctx,`P${p.p+1}`,x+(p.side==='left'?-44:44),a.y+a.h*p.pos,24,COLORS.white,'center',COLORS.ink,4);}else{const x=a.x+a.w*p.pos-p.len/2;const y=p.side==='top'?a.y:a.y+a.h;roundRect(ctx,x,y-10,p.len,20,10);ctx.fill();ctx.stroke();drawText(ctx,`P${p.p+1}`,a.x+a.w*p.pos,y+(p.side==='top'?-34:40),24,COLORS.white,'center',COLORS.ink,4);}}
-    draw(){ctx.fillStyle='#251039';ctx.fillRect(0,0,this.app.w,this.app.h);const a=this.area;ctx.fillStyle='rgba(255,255,255,.07)';roundRect(ctx,a.x,a.y,a.w,a.h,20);ctx.fill();ctx.strokeStyle='rgba(255,255,255,.45)';ctx.lineWidth=6;ctx.stroke();for(let i=0;i<32;i++){ctx.fillStyle='rgba(255,255,255,.7)';ctx.beginPath();ctx.arc(rand(a.x,a.x+a.w),rand(a.y,a.y+a.h),rand(1,3),0,Math.PI*2);ctx.fill();}for(const p of this.paddles)this.drawPaddle(p);ctx.fillStyle=COLORS.white;ctx.beginPath();ctx.arc(this.ball.x,this.ball.y,this.ball.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=COLORS.cyan;ctx.lineWidth=4;ctx.stroke();for(const p of this.paddles){const y=this.app.safeTop+62+p.p*34;drawText(ctx,`P${p.p+1} ❤${p.lives}`,p.p%2?this.app.w-72:72,y,22,PLAYER_COLORS[p.p],'center',COLORS.white,2);}this.drawHud('太空守門');this.drawControls();}
+    draw(){ctx.fillStyle='#251039';ctx.fillRect(0,0,this.app.w,this.app.h);const a=this.area;ctx.fillStyle='rgba(255,255,255,.07)';roundRect(ctx,a.x,a.y,a.w,a.h,20);ctx.fill();ctx.strokeStyle='rgba(255,255,255,.45)';ctx.lineWidth=6;ctx.stroke();for(let i=0;i<32;i++){ctx.fillStyle='rgba(255,255,255,.7)';ctx.beginPath();ctx.arc(rand(a.x,a.x+a.w),rand(a.y,a.y+a.h),rand(1,3),0,Math.PI*2);ctx.fill();}for(const p of this.paddles)this.drawPaddle(p);ctx.fillStyle=COLORS.white;ctx.beginPath();ctx.arc(this.ball.x,this.ball.y,this.ball.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=COLORS.cyan;ctx.lineWidth=4;ctx.stroke();for(const p of this.paddles){const y=this.app.safeTop+62+p.p*34;drawText(ctx,`P${p.p+1} ❤${p.lives}`,p.p%2?this.app.w-72:72,y,22,PLAYER_COLORS[p.p],'center',COLORS.white,2);}this.drawPongControls();this.drawHud('太空守門');}
   }
 
   GAMES.find(g=>g.id==='push').classRef = PushArenaGame;
